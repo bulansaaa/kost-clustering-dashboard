@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import StandardScaler
-from sklearn.cluster import KMeans
+from sklearn.cluster import AgglomerativeClustering
 from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score
 
@@ -49,7 +49,7 @@ def jalankan_clustering(df_raw, kolom_fitur, n_clusters=3):
     Menjalankan pipeline clustering lengkap:
     1. Bersihkan & siapkan fitur numerik
     2. Standardisasi
-    3. KMeans
+    3. Agglomerative Hierarchical Clustering
     4. PCA untuk visualisasi 2D
     5. Beri label segmen (Ekonomis/Standar/Premium) berdasarkan rata-rata harga
     """
@@ -81,9 +81,13 @@ def jalankan_clustering(df_raw, kolom_fitur, n_clusters=3):
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(fitur_df)
 
-    # KMeans
-    kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-    cluster_labels = kmeans.fit_predict(X_scaled)
+    # Agglomerative Clustering
+    agglomerative = AgglomerativeClustering(
+        n_clusters=n_clusters,
+        linkage="ward"
+    )
+
+    cluster_labels = agglomerative.fit_predict(X_scaled)
     df["Cluster"] = cluster_labels
 
     # Hitung silhouette score
@@ -102,8 +106,16 @@ def jalankan_clustering(df_raw, kolom_fitur, n_clusters=3):
     df["Segmen_Pasar"] = df["Cluster"].map(mapping_nama)
 
     # PCA untuk visualisasi 2D
+    if min(X_scaled.shape[0], X_scaled.shape[1]) < 2:
+        st.error(
+            "PCA membutuhkan minimal 2 data valid dan 2 fitur. "
+            "Silakan pilih minimal 2 kolom fitur atau gunakan dataset yang lebih banyak."
+        )
+        return None, None, None
+
     pca = PCA(n_components=2, random_state=42)
     pca_result = pca.fit_transform(X_scaled)
+
     df_pca = pd.DataFrame({
         "PCA1": pca_result[:, 0],
         "PCA2": pca_result[:, 1],
@@ -116,7 +128,7 @@ def jalankan_clustering(df_raw, kolom_fitur, n_clusters=3):
 # =========================
 # SUMBER DATA: UPLOAD ATAU DEFAULT
 # =========================
-st.sidebar.header("⚙️ Sumber Data & Pengaturan")
+st.sidebar.header("Sumber Data & Pengaturan")
 
 uploaded_file = st.sidebar.file_uploader(
     "Upload file CSV kos baru",
@@ -141,6 +153,14 @@ else:
 # JIKA UPLOAD FILE BARU -> JALANKAN CLUSTERING
 # =========================
 if uploaded_file is not None and df_input is not None:
+
+    file_signature = f"{uploaded_file.name}_{uploaded_file.size}"
+    if st.session_state.get("file_signature_terakhir") != file_signature:
+        for key in ["df", "df_pca", "silhouette_score_value"]:
+            st.session_state.pop(key, None)
+        st.session_state["file_signature_terakhir"] = file_signature
+    # --- akhir FIX ---
+
     st.sidebar.markdown("### Pilih Kolom Fitur untuk Clustering")
 
     kolom_numerik_tersedia = df_input.select_dtypes(include=[np.number]).columns.tolist()
@@ -164,7 +184,7 @@ if uploaded_file is not None and df_input is not None:
 
     n_clusters = st.sidebar.slider("Jumlah Cluster", min_value=2, max_value=6, value=3)
 
-    tombol_proses = st.sidebar.button("🚀 Jalankan Clustering", use_container_width=True)
+    tombol_proses = st.sidebar.button("Jalankan Clustering", use_container_width=True)
 
     if tombol_proses:
         if len(kolom_fitur) < 1:
@@ -364,7 +384,7 @@ st.markdown("---")
 # =========================
 st.subheader("Unduh Hasil Clustering")
 st.download_button(
-    label="⬇️ Download hasil_cluster.csv",
+    label="⬇️Download hasil_cluster.csv",
     data=df.to_csv(index=False).encode("utf-8"),
     file_name="hasil_cluster.csv",
     mime="text/csv"
